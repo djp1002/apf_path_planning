@@ -363,14 +363,14 @@ def apf_path(start, goal,obstacles_points,magnitude,best_path, prev_path, best_m
         if path_lengths[0] < path_lengths[1]:
             magnitude = max(10, magnitude - mag_increment)
             prev_path = path1 if len1 != float('inf') else prev_path
-            if len1 < min_path_length and len1 != float('inf'):
+            if len1 <= min_path_length and len1 != float('inf'):
                 min_path_length = len1
                 best_magnitude = magnitude
                 best_path = path1.copy()
         else:
             magnitude = min(200, magnitude + mag_increment)
             prev_path = path2 if len2 != float('inf') else prev_path
-            if len2 < min_path_length and len2 != float('inf'):
+            if len2 <= min_path_length and len2 != float('inf'):
                 min_path_length = len2
                 best_magnitude = magnitude + mag_diff
                 best_path = path2.copy()

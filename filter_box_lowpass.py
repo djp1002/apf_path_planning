@@ -7,11 +7,14 @@ def calculate_centroid(box):
 def distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
-def find_near_matches_2d(list1, list2, tolerance=1, k_low=0.5, delete_value=0.2, detailed_print=0):
+def find_near_matches_2d(list1, list2, dim_inc = 10, tolerance=1, k_low=0.5, delete_value=0.2, detailed_print=0):
     # Convert bounding boxes to centroids for sorting and comparison
     # Sorted lists are tuple contains bounding box and centroid
-    sorted1 = sorted([(calculate_centroid(box), box) for box in list1], key=lambda p: p[0])
-    sorted2 = sorted([(calculate_centroid(box), box) for box in list2], key=lambda p: p[0])
+    
+    sized_list1 = [[x1 - dim_inc, y1 - dim_inc, x2 + dim_inc, y2 + dim_inc, w] for x1, y1, x2, y2, w in list1]
+    sized_list2 = [[x1 - dim_inc, y1 - dim_inc, x2 + dim_inc, y2 + dim_inc, w] for x1, y1, x2, y2, w in list2]
+    sorted1 = sorted([(calculate_centroid(box), box) for box in sized_list1], key=lambda p: p[0])
+    sorted2 = sorted([(calculate_centroid(box), box) for box in sized_list2], key=lambda p: p[0])
     
     if detailed_print:print("lists input1", sorted1, "input2", sorted2)
     

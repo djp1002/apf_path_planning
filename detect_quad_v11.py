@@ -14,7 +14,7 @@ model = YOLO('model_weights/best_v11_E100_default.engine', task="detect")
 
 confidence_format = "{:.2f}"  # Format confidence score to two decimal places
 
-def yolo_detection( frame ):
+def yolo_detection( frame, quadruped_xy, sand_xy, stair_xy, stones_xy ):
     # thickness = 3
     # start_time = time.time()
     # frame_count = 0
@@ -25,7 +25,7 @@ def yolo_detection( frame ):
 
     # Perform object detection
     results = model(source=frame, verbose = False, show=False, conf=0.6, save=False)
-    quadruped_xy, sand_xy, stair_xy, stones_xy = [100,200,100,200], [0,0,0,0], [0,0,0,0], [600,200,600,200]
+    # quadruped_xy, sand_xy, stair_xy, stones_xy = [100,200,100,200], [0,0,0,0], [0,0,0,0], [600,200,600,200]
 
     for result in results:
                 if len(result.boxes) > 0:
@@ -36,17 +36,17 @@ def yolo_detection( frame ):
                         class_name = class_names[cls]
 
                         if(class_name == "quadruped"):
-                            quadruped_xy = [x1, y1, x2, y2]
+                            quadruped_xy = [x1, -y1, x2, -y2]
                         elif(class_name =="sand"):
-                            sand_xy = [x1, y1, x2, y2]
+                            sand_xy = [x1, -y1, x2, -y2]
                         elif(class_name =="stairs"):
-                            stair_xy = [x1, y1, x2, y2]
+                            stair_xy = [x1, -y1, x2, -y2]
                         elif(class_name =="stones"):
-                            stones_xy = [x1, y1, x2, y2]
+                            stones_xy = [x1, -y1, x2, -y2]
                         color = class_colors[class_name]
                         
                         # Draw bounding box and display class
                         final = cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness=2)
                         text = f"{class_name}: {confidence_format.format(conf)}"
-                        cv2.putText(final, text, (int(x1) + 10, int(y1) + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(final, text, (int(x1) + 10, int(y1) + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     return frame, results, quadruped_xy, sand_xy, stair_xy, stones_xy
