@@ -47,7 +47,7 @@ def calculate_distance(p1, p2):
     """Calculate Euclidean distance using NumPy"""
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
-def generate_path(start, goal, obstacles, obstacle_dims, magnitude):
+def generate_path(start, goal, obstacles, obstacle_dims, magnitude, prev_path,prev_dir_path_unit):
     """Generate path from start to goal avoiding obstacles"""
     path = [np.array(start)]
     current = np.array(start)
@@ -58,13 +58,45 @@ def generate_path(start, goal, obstacles, obstacle_dims, magnitude):
     while calculate_distance(current, goal) > 20.0:
         closest_obstacle_points = [get_closest_point_on_rectangle(current, obstacle, obstacle_dims) for obstacle in obstacles]
         closest_points.append(closest_obstacle_points)  # Store closest points
-        current = calculate_next_position(current, goal, closest_obstacle_points, magnitude)
+        # current = calculate_next_position(current, goal, closest_obstacle_points, magnitude)
+        next_1_pos = calculate_next_position(current, goal, closest_obstacle_points, magnitude)
+        next_2_pos = calculate_next_position(next_1_pos, goal, closest_obstacle_points, magnitude)
+        prev_pos = current
+        current = next_1_pos
+        current_len = len(path)
+        prev_len = len(prev_path)
+        dir_path_unit = prev_dir_path_unit
         # print(current)
+        if(current_len>3):
+            dist_next_3 = calculate_distance(next_2_pos,prev_pos)
+            print(prev_len,current_len)
+            if dist_next_3 < 5:
+                if(current_len > prev_len):
+                    index = prev_len - 1
+                    
+                else:
+                    index = current_len -1
+                point_on_prev_path = prev_path[index]
+                dir_vector_path = point_on_prev_path - prev_pos
+                # print(point_on_prev_path, prev_pos)
+                if np.linalg.norm(dir_vector_path) == 0:
+                    dir_path_unit = prev_dir_path_unit
+                    print("0 mag dir")
+                else:
+                    dir_path_unit = dir_vector_path / np.linalg.norm(dir_vector_path)
+                    prev_dir_path_unit = dir_path_unit
+                shift = 5.0 * dir_path_unit
+                current = prev_pos + np.ceil(shift)
+
+                print("stuck>>>>>>>>>>>>>>>>>>>>>")
+            else:
+               print("not stuck")
+        
         path.append(current)
     
-    return path, closest_points
+    return path, closest_points, dir_path_unit
 
-def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_and_points):
+def draw_scene(image, start, goal, obstacles, obstacle_dims, og_paths, cl_points):
     """Draw the current state"""
     # Draw obstacles
     for obstacle_center in obstacles:
@@ -79,7 +111,7 @@ def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_and_points):
     
     # Draw paths and closest points with different colors
     colors = [(100, 100, 255), (255, 255, 0)]  # Two colors for two paths
-    for (path, closest_points), color in zip(paths_and_points, colors):
+    for path, closest_points, color in zip(og_paths,cl_points, colors):
         if len(path) > 1:
             # Draw path
             for i in range(len(path)-1):
@@ -116,10 +148,12 @@ def main():
     magnitude = 50  # Starting magnitude
     mag_diff = 20   # Difference between path magnitudes
     obstacle_dims = np.array([20, 40])
-    
+    prev_path = []
+    prev_dir_path_unit = np.array([0,5])
     while True:
         image = np.zeros((480, 640, 3), dtype=np.uint8)
-        
+        # paths = []
+        path_lengths = []
         # Get obstacle positions from trackbars
         obstacles = []
         for i in range(1, 6):
@@ -130,29 +164,32 @@ def main():
         
         # Generate two paths with different magnitudes
         magnitudes = [magnitude, magnitude + mag_diff]
-        paths_and_points = [generate_path(start, goal, obstacles, obstacle_dims, mag) 
-                          for mag in magnitudes]
+        og_paths, closest_points, prev_dir_path_unit_list = zip(*[generate_path(start, goal, obstacles, obstacle_dims, mag, prev_path,prev_dir_path_unit) 
+                          for mag in magnitudes])
+        
         
         # Compare path lengths
         # path_lengths = [len(path) for path, _ in paths_and_points]
-        paths = []
-        path_lengths = []
-        for path, _ in paths_and_points:
-            path_lengths.append(len(path))
-            paths.append(path)
+        
+        path_lengths = [len(og_paths[0]),len(og_paths[1])]
+        # path_lengths[1] = len(og_paths[1])
+
+        
         
         if path_lengths[0] < path_lengths[1]:
             magnitude -= mag_diff
-            prev_path = paths[0]
+            prev_path = og_paths[0]
+            prev_dir_path_unit = prev_dir_path_unit_list[0]
     
         else:
             magnitude += mag_diff
-            prev_path = paths[1]
+            prev_path = og_paths[1]
+            prev_dir_path_unit = prev_dir_path_unit_list[1]
 
-        print(len(prev_path))
+        # print(len(prev_path))
 
         # Visualize
-        draw_scene(image, start, goal, obstacles, obstacle_dims, paths_and_points)
+        draw_scene(image, start, goal, obstacles, obstacle_dims, og_paths,closest_points)
         
         cv2.imshow(window_name, image)
         if cv2.waitKey(1) & 0xFF == 27:
