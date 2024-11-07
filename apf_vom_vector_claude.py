@@ -80,11 +80,11 @@ def predict_local_minima(force_analysis, threshold=1):
     
     # Check force magnitudes (similar magnitudes indicate potential cancellation)
     similar_magnitudes = (abs(force_analysis['mag_att'] - force_analysis['mag_rep']) < 
-                         0.2 * max(force_analysis['mag_att'], force_analysis['mag_rep']))
+                         0.1 * max(force_analysis['mag_att'], force_analysis['mag_rep']))
     
     # Check if resultant force is small compared to individual forces
     small_resultant = (force_analysis['mag_total'] < 
-                      0.3 * (force_analysis['mag_att'] + force_analysis['mag_rep']))
+                      0.1 * (force_analysis['mag_att'] + force_analysis['mag_rep']))
     
     return high_opposition and similar_magnitudes and small_resultant
 
