@@ -39,28 +39,28 @@ def get_closest_point_on_rectangle(point, rect_center, rect_dims):
         max(top_left[1], min(point[1], bottom_right[1]))
     ])
     
-    # If point is inside rectangle, find nearest edge
-    if np.all(closest == point):
-        # Calculate distances to edges
-        dist_to_edges = np.array([
-            abs(point[0] - top_left[0]),     # Distance to left edge
-            abs(point[0] - bottom_right[0]),  # Distance to right edge
-            abs(point[1] - top_left[1]),      # Distance to top edge
-            abs(point[1] - bottom_right[1])   # Distance to bottom edge
-        ])
+    # # If point is inside rectangle, find nearest edge
+    # if np.all(closest == point):
+    #     # Calculate distances to edges
+    #     dist_to_edges = np.array([
+    #         abs(point[0] - top_left[0]),     # Distance to left edge
+    #         abs(point[0] - bottom_right[0]),  # Distance to right edge
+    #         abs(point[1] - top_left[1]),      # Distance to top edge
+    #         abs(point[1] - bottom_right[1])   # Distance to bottom edge
+    #     ])
         
-        # Find nearest edge
-        min_dist_idx = np.argmin(dist_to_edges)
+    #     # Find nearest edge
+    #     min_dist_idx = np.argmin(dist_to_edges)
         
-        # Project point to nearest edge
-        if min_dist_idx == 0:    # Left edge
-            closest[0] = top_left[0]
-        elif min_dist_idx == 1:  # Right edge
-            closest[0] = bottom_right[0]
-        elif min_dist_idx == 2:  # Top edge
-            closest[1] = top_left[1]
-        else:                    # Bottom edge
-            closest[1] = bottom_right[1]
+    #     # Project point to nearest edge
+    #     if min_dist_idx == 0:    # Left edge
+    #         closest[0] = top_left[0]
+    #     elif min_dist_idx == 1:  # Right edge
+    #         closest[0] = bottom_right[0]
+    #     elif min_dist_idx == 2:  # Top edge
+    #         closest[1] = top_left[1]
+    #     else:                    # Bottom edge
+    #         closest[1] = bottom_right[1]
             
     return closest
 
@@ -78,31 +78,18 @@ def calculate_force_metrics(current_pos, goal, obstacles, obstacle_dims, magnitu
     f_rep_total = np.zeros(2)
     closest_points = []
     
-    # Influence range for forces
-    p0 = 100.0
-    
     for obstacle in obstacles:
         # Find closest point on rectangle boundary
         closest_point = get_closest_point_on_rectangle(current_pos, obstacle, obstacle_dims)
         closest_points.append(closest_point)
-        
-        # Calculate distance to closest point
-        dist = calculate_distance(current_pos, closest_point)
-        
-        # Only apply force if within influence range
-        if dist < p0:
-            f_rep = calculate_force(current_pos, closest_point, 
-                                  charge=-2.0 * (1 - min(magnitude, 90)/100))
-            
-            # Scale force based on distance (stronger when closer)
-            scale = (1 - dist/p0) * (1 - dist/p0)  # Quadratic scaling
-            f_rep_total += f_rep * scale
+        f_rep = calculate_force(current_pos, closest_point, charge=-2.0 * (1 - min(magnitude, 90)/100))
+        f_rep_total += f_rep
     
     mag_rep = np.linalg.norm(f_rep_total)
     dir_rep = f_rep_total / mag_rep if mag_rep > 0 else np.zeros(2)
     
     # Calculate force alignment
-    force_alignment = np.dot(dir_att, -dir_rep)
+    force_alignment = np.dot(dir_att, dir_rep)
     
     # Calculate resultant force
     f_total = f_att + f_rep_total
@@ -112,9 +99,6 @@ def calculate_force_metrics(current_pos, goal, obstacles, obstacle_dims, magnitu
     # Calculate force ratio and its trend
     force_ratio = mag_att / mag_rep if mag_rep > 0 else float('inf')
     ratio_trend = 0
-    if prev_metrics is not None:
-        prev_ratio = prev_metrics.get('force_ratio', force_ratio)
-        ratio_trend = force_ratio - prev_ratio
     
     return {
         'f_att': f_att,
@@ -132,273 +116,201 @@ def calculate_force_metrics(current_pos, goal, obstacles, obstacle_dims, magnitu
         'closest_points': closest_points
     }
 
-def detect_local_minima_region(force_metrics, history_window=5):
+def detect_local_minima_region(force_metrics,prev_force_metrics):
     """
-    Proactively detect if robot is entering a local minima region
-    Returns (is_in_local_minima, confidence_score)
+    Proactively detect if robot is approaching a local minima region
+    Returns (is_approaching_minima, confidence_score, approach_vector)
     """
-    # Force alignment check (near opposing forces)
-    alignment_score = max(0, (force_metrics['force_alignment'] - 0.7) / 0.3)
+    # Calculate force opposition (dot product should be approaching -1)
+    force_angle = force_metrics['force_alignment']
+    force_angle_score = max(0, -force_angle) 
     
-    # Force magnitude ratio check (attractive ≈ repulsive)
-    ratio = force_metrics['force_ratio']
-    ratio_score = max(0, 1 - abs(ratio - 1) / 0.5)
+    # Check if forces are becoming equal (ratio approaching 1)
+    force_mag_ratio = force_metrics['mag_att'] / force_metrics['mag_rep'] if force_metrics['mag_rep'] > 0 else float('inf')
+    force_mag_score = max(0, 1 - abs(force_mag_ratio - 1))
     
-    # Trend analysis (ratio approaching 1)
-    trend_score = 0
-    if abs(force_metrics['ratio_trend']) > 0.1:
-        trend_score = 1 if force_metrics['ratio_trend'] < 0 else 0
-    
-    # Resultant force check (small compared to individual forces)
-    force_cancellation = force_metrics['mag_total'] / (force_metrics['mag_att'] + force_metrics['mag_rep'])
-    cancellation_score = max(0, 1 - force_cancellation / 0.3)
-    
-    # Combine scores with weights
-    weights = [0.4, 0.3, 0.2, 0.1]  # Alignment, ratio, trend, cancellation
-    confidence = (weights[0] * alignment_score + 
-                 weights[1] * ratio_score +
-                 weights[2] * trend_score +
-                 weights[3] * cancellation_score)
-    
-    return confidence > 0.6, confidence
+    if prev_force_metrics is not None:
+        prev_force_mag_ratio = prev_force_metrics['mag_att'] / prev_force_metrics['mag_rep'] if prev_force_metrics['mag_rep'] > 0 else float('inf')
+        prev_force_mag_score = max(0, 1 - abs(prev_force_mag_ratio - 1))
+        mag_diff_force = force_mag_score - prev_force_mag_score
 
-def calculate_path_direction(path, current_pos, window=5):
+        prev_force_angle = prev_force_metrics['force_alignment']
+        prev_force_angle_score = max(0, -prev_force_angle)
+        mag_diff_angle = force_angle_score - prev_force_angle_score
+        trend_score = 1.0 if mag_diff_force>0 and mag_diff_angle>0 else 0.0
+        steps_to_minima = (1 - force_mag_score)/mag_diff_force if mag_diff_force>0 else 15
+        
+    else:
+        trend_score = 0.0
+        steps_to_minima = 15
+
+    # Early warning score - higher when we're approaching but not yet trapped
+    warning_score = (force_angle_score * force_mag_score * trend_score)
+    
+    # We want to detect earlier, so lower threshold
+    is_approaching = warning_score > 0.9  # More sensitive than previous 0.6
+    if is_approaching:
+       print("steps_to_minima", steps_to_minima)
+
+    return is_approaching, warning_score, steps_to_minima
+
+
+def calculate_prev_path_direction(path, current_pos):   #************************change whole logic
     """Calculate recent path direction from history"""
-    if len(path) < 2:
-        return None
-        
-    # Get recent path segment
-    end = len(path)
-    start = max(0, end - window)
-    recent_path = path[start:end]
-    
-    # Calculate average direction
-    directions = []
-    for i in range(len(recent_path)-1):
-        segment = recent_path[i+1] - recent_path[i]
-        if np.linalg.norm(segment) > 0:
-            directions.append(segment / np.linalg.norm(segment))
-    
-    if not directions:
-        return None
-        
-    avg_direction = np.mean(directions, axis=0)
-    if np.linalg.norm(avg_direction) > 0:
-        return avg_direction / np.linalg.norm(avg_direction)
-    return None
+    # Example array of 10 points (each row is a [x, y] coordinate)
+    # Calculate Euclidean distances from each point to the current point
+    zero_dir = np.array([0,0])
+    if len(path)>1:
+        distances = np.linalg.norm(path - current_pos, axis=1)
+
+        # Find the index of the minimum distance
+        nearest_index = np.argmin(distances)
+        # Get the closest point
+        nearest_point = path[nearest_index]
+        direction = nearest_point - current_pos
+        dir_mag = np.linalg.norm(direction)
+        if dir_mag > 0:
+            return direction / dir_mag
+        else:
+            return zero_dir
+    else:
+        return zero_dir
 
 # ---------------------- VOM Placement and Force Adjustment ----------------------
-def calculate_vom_placement(current_pos, force_metrics, prev_path, safe_distance=30.0):
+def calculate_vom_placement(current_pos, force_metrics, prev_path, best_path, prev_vom, steps):
     """
-    Calculate VOM placement using 45° shift method
-    Returns (vom_position, desired_force_direction)
+    Calculate VOM placement using 45° shift method based on approach vector
+    Uses best path as reference for direction
     """
-    local_minima_vector = -force_metrics['dir_total']  # Direction to local minimum
+    # Get attractive force direction (pure direction towards goal)
+    local_minima_vector = force_metrics['dir_total']
     
-    # Determine previous path direction
-    path_dir = calculate_path_direction(prev_path, current_pos)
-    if path_dir is None:
-        # No previous path - use perpendicular to local_minima_vector
-        path_dir = np.array([-local_minima_vector[1], local_minima_vector[0]])
+    # Get the path direction - first try best path, then prev path
+    reference_path = best_path if best_path is not None else prev_path
+    prev_path_dir = calculate_prev_path_direction(reference_path, current_pos)  # Increased window  # need to change this logic
     
-    # Determine which side prev_path is relative to local_minima_vector
+    if prev_path_dir is None:
+        # If no reference path, use perpendicular to attractive force
+        prev_path_dir = np.array([-local_minima_vector[1], local_minima_vector[0]])
+        prev_path_dir = prev_path_dir / np.linalg.norm(prev_path_dir)
+    
+    # Determine which side of local minima vector the path lies
     cross_product = np.cross(np.append(local_minima_vector, 0), 
-                           np.append(path_dir, 0))[2]
+                           np.append(prev_path_dir, 0))[2]
     on_right = cross_product > 0
     
-    # Calculate 45° shift in appropriate direction
-    angle = -np.pi/4 if on_right else np.pi/4  # Shift opposite to prev_path
+    # Calculate 45° shift OPPOSITE to prev_path side
+    angle = -np.pi/4 if on_right else np.pi/4
     cos_theta, sin_theta = np.cos(angle), np.sin(angle)
     rotation_matrix = np.array([[cos_theta, -sin_theta],
                               [sin_theta, cos_theta]])
     
-    # Calculate VOM position and desired force direction
+    # Calculate VOM position shifted from local minima vector
     vom_direction = rotation_matrix @ local_minima_vector
-    vom_position = current_pos + safe_distance * vom_direction
-    
-    # Desired force direction (45° same side as prev_path)
-    desired_angle = np.pi/4 if on_right else -np.pi/4
-    cos_theta, sin_theta = np.cos(desired_angle), np.sin(desired_angle)
-    rotation_matrix = np.array([[cos_theta, -sin_theta],
-                              [sin_theta, cos_theta]])
-    desired_force_dir = rotation_matrix @ (-local_minima_vector)
-    
-    return vom_position, desired_force_dir
+    vom_new_pos = current_pos + (vom_direction*steps)
+    if prev_vom is not None:
+        if np.linalg.norm(vom_new_pos - prev_vom) < 100:
+            vom_new_pos = prev_vom
 
-def adjust_vom_forces(current_pos, voms, force_metrics, desired_direction):
-    """
-    Adjust VOM force magnitudes based on escape progress
-    Returns updated VOM charges
-    """
-    base_charge = -2.0  # Base repulsive charge
-    charges = []
     
-    for vom in voms:
-        # Calculate current movement direction
-        movement_dir = force_metrics['dir_total']
-        
-        # Calculate alignment with desired direction
-        alignment = np.dot(movement_dir, desired_direction)
-        
-        # Adjust charge based on alignment
-        if alignment < 0.7:  # Not moving in desired direction
-            charge = base_charge * (1.5 - alignment)  # Increase magnitude
-        else:
-            charge = base_charge  # Maintain base magnitude
-            
-        charges.append(min(charge, -4.0))  # Limit maximum charge
-        
-    return charges
+    # # Desired force direction is 45° on SAME side as prev_path
+    # desired_angle = np.pi/4 if on_right else -np.pi/4
+    # cos_theta, sin_theta = np.cos(desired_angle), np.sin(desired_angle)
+    # rotation_matrix = np.array([[cos_theta, -sin_theta],
+    #                           [sin_theta, cos_theta]])
+    # desired_force_dir = rotation_matrix @ local_minima_vector
+
+
+
+    force_total_mag = np.linalg.norm(force_metrics['f_total'])
+    theta = np.pi*3/4
+    force_vom_mag = force_total_mag/(np.sin(theta)-np.cos(theta))
+    dist_to_vom = calculate_distance(vom_new_pos,current_pos)
+    charge = round((force_vom_mag * (dist_to_vom**2))/100000)
+    print("current and vom pos, steps",current_pos,vom_new_pos,steps)
+
+    return vom_new_pos, charge
 
 # second part ----------------------------------------------------------------------------------------------------------------------------------------->
 
 # ---------------------- Path Generation Functions ----------------------
-def calculate_next_position_with_voms(current, goal, obstacles, obstacle_dims, 
-                                    voms, vom_charges, magnitude):
+def calculate_next_position_with_voms(current,force_metrics,voms, vom_charges):
     """Calculate next position using closest points on rectangles"""
-    # Attractive force to goal
-    f_total = calculate_force(current, goal, charge=10.0 * (1 + magnitude/100))
-    
-    # Repulsive forces from obstacles with consistent p0
-    p0 = 100.0  # Same influence range as in force_metrics
-    for obstacle in obstacles:
-        closest = get_closest_point_on_rectangle(current, obstacle, obstacle_dims)
-        dist = calculate_distance(current, closest)
-        
-        if dist < p0:
-            f_rep = calculate_force(current, closest, 
-                                  charge=-2.0 * (1 - min(magnitude, 90)/100))
-            # Scale force based on distance
-            scale = (1 - dist/p0) * (1 - dist/p0)
-            f_total += f_rep * scale
-    
-    # Add VOM forces with same scaling
-    for vom, charge in zip(voms, vom_charges):
-        dist = calculate_distance(current, vom)
-        if dist < p0:
-            f_vom = calculate_force(current, vom, charge=charge)
-            scale = (1 - dist/p0) * (1 - dist/p0)
-            f_total += f_vom * scale
+    f_total = force_metrics['f_total']
+
+    # Add VOM forces
+    if voms is not None:
+        for vom, charge in zip(voms, vom_charges):
+            if vom is not None:
+                f_vom = calculate_force(current, vom, charge=charge)
+                f_total += f_vom
     
     # Calculate movement
     if np.linalg.norm(f_total) > 0:
         direction = f_total / np.linalg.norm(f_total)
         shift = 5.0 * direction  # Fixed step size
+        # print("shift magnbitude---------------------->",shift)
         return current + np.ceil(shift)
     return current
 
-def is_making_progress(current, last_progress, goal, threshold=5.0):
-    """
-    Check if making progress towards goal
-    Returns True if moving closer to goal
-    """
-    curr_to_goal = calculate_distance(current, goal)
-    last_to_goal = calculate_distance(last_progress, goal)
-    return curr_to_goal < last_to_goal - threshold
-
-def generate_enhanced_path(start, goal, obstacles, obstacle_dims, magnitude, prev_path):
-    """Generate path with enhanced local minima avoidance"""
+def generate_enhanced_path(start, goal, obstacles, obstacle_dims, magnitude, prev_path, best_path=None):
+    """Generate path with proactive local minima avoidance using best path reference"""
     path = [np.array(start)]
     current = np.array(start)
     virtual_obstacles = []
     vom_charges = []
-    desired_direction = None
-    
+
     # State tracking
     prev_metrics = None
-    stuck_counter = 0
-    last_progress = current
-    escape_attempts = 0
     max_iterations = 1000
+    iteration = 0
+    dist_to_goal = 100
+    prev_vom_pos = None
+    reached = False
     
     print(f"\nAttempting path with magnitude {magnitude:.1f}")
     
-    for iteration in range(max_iterations):
+    while dist_to_goal>20 and iteration < max_iterations:
         # Calculate force metrics
-        force_metrics = calculate_force_metrics(current, goal, obstacles, 
-                                             obstacle_dims, magnitude, prev_metrics)
+        force_metrics = calculate_force_metrics(current, goal, obstacles, obstacle_dims, magnitude, prev_metrics)
         
-        # Check for local minima region
-        in_local_minima, confidence = detect_local_minima_region(force_metrics)
+        # Proactive local minima detection
+        approaching_minima, confidence, steps_to_minima = detect_local_minima_region(force_metrics,prev_metrics)
         
-        # Progress tracking
-        making_progress = is_making_progress(current, last_progress, goal)
-        if making_progress:
-            stuck_counter = max(0, stuck_counter - 1)
-            last_progress = current.copy()
-            if stuck_counter == 0 and len(virtual_obstacles) > 0:
-                print(f"Progress: {calculate_distance(current, goal):.1f} units to goal")
-        else:
-            stuck_counter += 1
+        # VOM management - now more proactive and using best_path
+        if approaching_minima:
+            print(f"Potential local minimum detected! Confidence: {confidence:.2f}")
             
-        # Debug output
-        if stuck_counter > 0 and stuck_counter % 10 == 0:
-            print(f"Stuck for {stuck_counter} iterations")
-            print(f"Force alignment: {force_metrics['force_alignment']:.2f}")
-            print(f"Current position: {current}")
-        
-        # VOM management
-        if (in_local_minima or stuck_counter > 10) and len(virtual_obstacles) < 3:
-            vom_pos, new_desired_dir = calculate_vom_placement(
-                current, force_metrics, prev_path)
-            
-            # Validate VOM placement
-            valid_placement = True
-            if virtual_obstacles:
-                min_dist = min(calculate_distance(vom_pos, v) for v in virtual_obstacles)
-                valid_placement = min_dist > 50.0
-                
-            if valid_placement:
-                virtual_obstacles.append(vom_pos)
-                vom_charges.append(-2.0)
-                desired_direction = new_desired_dir
-                escape_attempts += 1
-                stuck_counter = 0
-                print(f"Added VOM {len(virtual_obstacles)} at {vom_pos}")
-        
-        # Adjust VOM forces if needed
-        if virtual_obstacles and desired_direction is not None:
-            vom_charges = adjust_vom_forces(current, virtual_obstacles, 
-                                         force_metrics, desired_direction)
-            
-        # Calculate next position including VOMs
-        next_pos = calculate_next_position_with_voms(
-            current, goal, obstacles, obstacle_dims, 
-            virtual_obstacles, vom_charges, magnitude)
-        
-        # Update position
+            # Use both initial direction and best path for better VOM placement
+            new_vom_pos, new_vom_charge = calculate_vom_placement(current, force_metrics, prev_path, best_path, prev_vom_pos,steps_to_minima)
+            if prev_vom_pos is None :
+                virtual_obstacles.append(new_vom_pos)
+                vom_charges.append(new_vom_charge)
+            else:
+                dist_diff = np.linalg.norm(prev_vom_pos-new_vom_pos)
+                if dist_diff > 100:
+                    virtual_obstacles.append(new_vom_pos)
+                    vom_charges.append(new_vom_charge)
+                    
+        next_pos = calculate_next_position_with_voms(current, force_metrics, virtual_obstacles, vom_charges)
+        # print("current and next position",current,next_pos,"charge",vom_charges)
         current = next_pos
         path.append(current)
-        
-        # Clean up distant VOMs
-        if virtual_obstacles:
-            valid_voms = []
-            valid_charges = []
-            for vom, charge in zip(virtual_obstacles, vom_charges):
-                if calculate_distance(current, vom) < 100.0:
-                    valid_voms.append(vom)
-                    valid_charges.append(charge)
-            if len(valid_voms) != len(virtual_obstacles):
-                print(f"Cleaned up {len(virtual_obstacles) - len(valid_voms)} distant VOMs")
-            virtual_obstacles = valid_voms
-            vom_charges = valid_charges
         
         # Check if goal reached
         dist_to_goal = calculate_distance(current, goal)
         if dist_to_goal < 20.0:
             print(f"Goal reached in {len(path)} steps!")
-            return path, force_metrics['closest_points'], virtual_obstacles, len(path)
+            reached = True
         
         # Store metrics for next iteration
         prev_metrics = force_metrics
+        iteration += 1
+    if iteration > max_iterations:
+        print("max iteration")
             
-        # Break conditions
-        if stuck_counter > 50 or escape_attempts > 5:
-            print(f"Path failed - Stuck: {stuck_counter}, Attempts: {escape_attempts}")
-            print(f"Final distance to goal: {dist_to_goal:.1f}")
-            return path, force_metrics['closest_points'], virtual_obstacles, float('inf')
             
-    return path, force_metrics['closest_points'], virtual_obstacles, float('inf')
+    return path, force_metrics['closest_points'], virtual_obstacles, iteration, reached
 
 # ---------------------- Visualization Functions ----------------------
 def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_list, closest_points_list, voms_list):
@@ -423,6 +335,20 @@ def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_list, closest
     colors = [(100, 100, 255), (255, 255, 0)]  # Blue for test path, Yellow for best path
     
     for paths, voms, color in zip(paths_list, voms_list, colors):
+        
+        # Draw VOMs with influence radius
+        for vom in voms:
+            if vom is not None:
+                cv2.circle(image, to_cv2_point(vom), radius=10, 
+                        color=(0, 150, 150), thickness=-1)
+                cv2.circle(image, to_cv2_point(vom), radius=50, 
+                        color=(0, 100, 100), thickness=1)
+                
+                # Draw direction indicators
+                cv2.line(image, to_cv2_point(vom), 
+                        to_cv2_point(vom + np.array([50, 0])),
+                        color=(0, 200, 200), thickness=1)
+            
         # Draw path with gradient
         if len(paths) > 1:
             for i in range(len(paths)-1):
@@ -436,18 +362,6 @@ def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_list, closest
                 cv2.line(image, to_cv2_point(paths[i]), 
                         to_cv2_point(paths[i+1]), 
                         color=path_color, thickness=2)
-        
-        # Draw VOMs with influence radius
-        for vom in voms:
-            cv2.circle(image, to_cv2_point(vom), radius=10, 
-                      color=(0, 150, 150), thickness=-1)
-            cv2.circle(image, to_cv2_point(vom), radius=50, 
-                      color=(0, 100, 100), thickness=1)
-            
-            # Draw direction indicators
-            cv2.line(image, to_cv2_point(vom), 
-                    to_cv2_point(vom + np.array([20, 0])),
-                    color=(0, 200, 200), thickness=1)
     
     # Draw start and goal with labels
     cv2.circle(image, to_cv2_point(start), radius=20, 
@@ -467,6 +381,8 @@ def main():
     start = np.array([40, -440])
     goal = np.array([300, -140])
     prev_path = []
+    best_path = None
+    best_path_length = float('inf')
     
     window_name = 'Enhanced APF Path Planning'
     cv2.namedWindow(window_name)
@@ -504,36 +420,45 @@ def main():
         path_lengths = []
         
         # Current best magnitude path
-        path1, cp1, v1, len1 = generate_enhanced_path(
-            start, goal, obstacles, obstacle_dims, magnitude, prev_path)
-        
+        path1, cp1, v1, len1,reached1 = generate_enhanced_path(
+            start, goal, obstacles, obstacle_dims, magnitude, prev_path, best_path)
+        # len1 = len(path1)
         # Test path with different magnitude
         test_magnitude = magnitude + mag_diff
-        path2, cp2, v2, len2 = generate_enhanced_path(
-            start, goal, obstacles, obstacle_dims, test_magnitude, prev_path)
-        
-        paths = [path1, path2]
+        path2, cp2, v2, len2, reached2 = generate_enhanced_path(
+            start, goal, obstacles, obstacle_dims, test_magnitude, prev_path, best_path)
+
         closest_points = [cp1, cp2]
         voms = [v1, v2]
         path_lengths = [len1, len2]
         
         # Update magnitude based on path lengths
-        if path_lengths[0] < path_lengths[1]:
-            magnitude = max(10, magnitude - mag_increment)
-            prev_path = path1
-            if path_lengths[0] < min_path_length:
-                min_path_length = path_lengths[0]
-                best_magnitude = magnitude
+        if reached1 and reached2:
+            if path_lengths[0] < path_lengths[1]:
+                magnitude = max(10, magnitude - mag_increment)
+                prev_path = path1 if len1 != float('inf') else prev_path
+                if len1 < min_path_length and len1 != float('inf'):
+                    min_path_length = len1
+                    best_magnitude = magnitude
+                    best_path = path1.copy()
+            else:
+                magnitude = min(200, magnitude + mag_increment)
+                prev_path = path2 if len2 != float('inf') else prev_path
+                if len2 < min_path_length and len2 != float('inf'):
+                    min_path_length = len2
+                    best_magnitude = magnitude + mag_diff
+                    best_path = path2.copy()
         else:
-            magnitude = min(300, magnitude + mag_increment)
-            prev_path = path2
-            if path_lengths[1] < min_path_length:
-                min_path_length = path_lengths[1]
-                best_magnitude = magnitude + mag_diff
+            magnitude = best_magnitude
         
-        # Visualization
+        # Visualization - also show best path if it exists
+        paths_to_draw = [path1, path2]
+        if best_path is not None:
+            paths_to_draw.append(best_path)
+            voms.append([])  # Add empty voms for best path visualization
+        
         draw_scene(image, start, goal, obstacles, obstacle_dims, 
-                  paths, closest_points, voms)
+                  paths_to_draw, closest_points, voms)
         
         # Display info
         info_text = f"Magnitude: {magnitude:.1f} | Best: {best_magnitude:.1f} | Min Length: {min_path_length}"
@@ -550,9 +475,15 @@ def main():
             print("\nResetting path planning")
             magnitude = 50
             prev_path = []
+            best_path = None
+            best_path_length = float('inf')
             min_path_length = float('inf')
         
     cv2.destroyAllWindows()
+
+def some():
+    return None
+
 
 if __name__ == "__main__":
     main()
