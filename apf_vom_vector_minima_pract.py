@@ -18,7 +18,7 @@ def calculate_distance(p1, p2):
     """Calculate Euclidean distance"""
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
-def get_closest_point_on_rectangle(point, rect_center, rect_dims):
+def get_closest_point_on_rectangle(point, rect_points):
     """
     Find closest point on rectangle boundary to given point
     point: current position
@@ -26,46 +26,20 @@ def get_closest_point_on_rectangle(point, rect_center, rect_dims):
     rect_dims: [width, height] of rectangle
     """
     point = np.array(point)
-    rect_center = np.array(rect_center)
-    rect_dims = np.array(rect_dims)
-    
-    # Calculate rectangle bounds
-    top_left = rect_center - rect_dims
-    bottom_right = rect_center + rect_dims
-    
-    # First clamp point to rectangle bounds
+    rect_points = np.array(rect_points)
+
+    top_left = np.array([rect_points[0], rect_points[1]])       # [x1,y1]
+    bottom_right = np.array([rect_points[2], rect_points[3]])   # [x2,y2]
+
     closest = np.array([
-        max(top_left[0], min(point[0], bottom_right[0])),
-        max(top_left[1], min(point[1], bottom_right[1]))
+        np.clip(point[0], top_left[0], bottom_right[0]),    # clip x between x1 and x2
+        np.clip(point[1], bottom_right[1], top_left[1])     # clip y between y2 and y1 (note order due to negative y)
     ])
-    
-    # # If point is inside rectangle, find nearest edge
-    # if np.all(closest == point):
-    #     # Calculate distances to edges
-    #     dist_to_edges = np.array([
-    #         abs(point[0] - top_left[0]),     # Distance to left edge
-    #         abs(point[0] - bottom_right[0]),  # Distance to right edge
-    #         abs(point[1] - top_left[1]),      # Distance to top edge
-    #         abs(point[1] - bottom_right[1])   # Distance to bottom edge
-    #     ])
-        
-    #     # Find nearest edge
-    #     min_dist_idx = np.argmin(dist_to_edges)
-        
-    #     # Project point to nearest edge
-    #     if min_dist_idx == 0:    # Left edge
-    #         closest[0] = top_left[0]
-    #     elif min_dist_idx == 1:  # Right edge
-    #         closest[0] = bottom_right[0]
-    #     elif min_dist_idx == 2:  # Top edge
-    #         closest[1] = top_left[1]
-    #     else:                    # Bottom edge
-    #         closest[1] = bottom_right[1]
-            
+
     return closest
 
 # ---------------------- Force Analysis Functions ----------------------
-def calculate_force_metrics(current_pos, goal, obstacles, obstacle_dims, magnitude, prev_metrics=None):
+def calculate_force_metrics(current_pos, goal, obstacles_xy, magnitude, prev_metrics=None):
     """
     Calculate comprehensive force metrics using closest points on obstacles
     """
@@ -78,9 +52,9 @@ def calculate_force_metrics(current_pos, goal, obstacles, obstacle_dims, magnitu
     f_rep_total = np.zeros(2)
     closest_points = []
     
-    for obstacle in obstacles:
+    for obstacle_xy in obstacles_xy:
         # Find closest point on rectangle boundary
-        closest_point = get_closest_point_on_rectangle(current_pos, obstacle, obstacle_dims)
+        closest_point = get_closest_point_on_rectangle(current_pos, obstacle_xy)
         closest_points.append(closest_point)
         f_rep = calculate_force(current_pos, closest_point, charge=-2.0 * (1 - min(magnitude, 90)/100))
         f_rep_total += f_rep
@@ -148,9 +122,9 @@ def detect_local_minima_region(force_metrics,prev_force_metrics):
     warning_score = (force_angle_score * force_mag_score * trend_score)
     
     # We want to detect earlier, so lower threshold
-    is_approaching = warning_score > 0.9  # More sensitive than previous 0.6
-    if is_approaching:
-       print("steps_to_minima", steps_to_minima)
+    is_approaching = warning_score > 0.98 # More sensitive than previous 0.6
+    # if is_approaching:
+    #    print("steps_to_minima", steps_to_minima)
 
     return is_approaching, warning_score, steps_to_minima
 
@@ -207,27 +181,19 @@ def calculate_vom_placement(current_pos, force_metrics, prev_path, best_path, pr
     
     # Calculate VOM position shifted from local minima vector
     vom_direction = rotation_matrix @ local_minima_vector
-    vom_new_pos = current_pos + (vom_direction*steps)
+    vom_direction = vom_direction/np.linalg.norm(vom_direction)
+    vom_new_pos = current_pos + (vom_direction*50)
     if prev_vom is not None:
         if np.linalg.norm(vom_new_pos - prev_vom) < 100:
             vom_new_pos = prev_vom
 
-    
-    # # Desired force direction is 45° on SAME side as prev_path
-    # desired_angle = np.pi/4 if on_right else -np.pi/4
-    # cos_theta, sin_theta = np.cos(desired_angle), np.sin(desired_angle)
-    # rotation_matrix = np.array([[cos_theta, -sin_theta],
-    #                           [sin_theta, cos_theta]])
-    # desired_force_dir = rotation_matrix @ local_minima_vector
 
-
-
-    force_total_mag = np.linalg.norm(force_metrics['f_total'])
+    force_total_mag = force_metrics['mag_total']
     theta = np.pi*3/4
     force_vom_mag = force_total_mag/(np.sin(theta)-np.cos(theta))
     dist_to_vom = calculate_distance(vom_new_pos,current_pos)
     charge = round((force_vom_mag * (dist_to_vom**2))/100000)
-    print("current and vom pos, steps",current_pos,vom_new_pos,steps)
+    # print("current and vom pos, steps",current_pos,vom_new_pos,steps)
 
     return vom_new_pos, charge
 
@@ -242,7 +208,7 @@ def calculate_next_position_with_voms(current,force_metrics,voms, vom_charges):
     if voms is not None:
         for vom, charge in zip(voms, vom_charges):
             if vom is not None:
-                f_vom = calculate_force(current, vom, charge=charge)
+                f_vom = calculate_force(current, vom, charge=charge) * 5
                 f_total += f_vom
     
     # Calculate movement
@@ -253,7 +219,7 @@ def calculate_next_position_with_voms(current,force_metrics,voms, vom_charges):
         return current + np.ceil(shift)
     return current
 
-def generate_enhanced_path(start, goal, obstacles, obstacle_dims, magnitude, prev_path, best_path=None):
+def generate_enhanced_path(start, goal, obstacles_xy, magnitude, prev_path, best_path=None):
     """Generate path with proactive local minima avoidance using best path reference"""
     path = [np.array(start)]
     current = np.array(start)
@@ -262,24 +228,25 @@ def generate_enhanced_path(start, goal, obstacles, obstacle_dims, magnitude, pre
 
     # State tracking
     prev_metrics = None
-    max_iterations = 1000
+    max_iterations = 200
     iteration = 0
-    dist_to_goal = 100
+    dist_to_goal = float('inf')
     prev_vom_pos = None
     reached = False
-    
-    print(f"\nAttempting path with magnitude {magnitude:.1f}")
+    closest_points = []
+    # print(f"\nAttempting path with magnitude {magnitude:.1f}")
     
     while dist_to_goal>20 and iteration < max_iterations:
         # Calculate force metrics
-        force_metrics = calculate_force_metrics(current, goal, obstacles, obstacle_dims, magnitude, prev_metrics)
+        force_metrics = calculate_force_metrics(current, goal, obstacles_xy, magnitude, prev_metrics)
+        closest_points.append(force_metrics['closest_points'])
         
         # Proactive local minima detection
         approaching_minima, confidence, steps_to_minima = detect_local_minima_region(force_metrics,prev_metrics)
         
         # VOM management - now more proactive and using best_path
         if approaching_minima:
-            print(f"Potential local minimum detected! Confidence: {confidence:.2f}")
+            # print(f"Potential local minimum detected! Confidence: {confidence:.2f}")
             
             # Use both initial direction and best path for better VOM placement
             new_vom_pos, new_vom_charge = calculate_vom_placement(current, force_metrics, prev_path, best_path, prev_vom_pos,steps_to_minima)
@@ -310,44 +277,33 @@ def generate_enhanced_path(start, goal, obstacles, obstacle_dims, magnitude, pre
         print("max iteration")
             
             
-    return path, force_metrics['closest_points'], virtual_obstacles, iteration, reached
+    return path, closest_points, virtual_obstacles, iteration, reached
 
 # ---------------------- Visualization Functions ----------------------
-def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_list, closest_points_list, voms_list):
+def draw_scene(image, start, goal, obstacles_xy, paths_list, closest_points_list, voms_list):
     """Draw the scene with enhanced visualization"""
     def to_cv2_point(point):
         return (int(point[0]), -int(point[1]))
     
     # Clear image
     image.fill(0)
-    
+
     # Draw obstacles
-    for obstacle_center in obstacles:
-        rect_width, rect_height = obstacle_dims
-        top_left = np.array([obstacle_center[0] - rect_width, 
-                           obstacle_center[1] + rect_height])
-        bottom_right = np.array([obstacle_center[0] + rect_width, 
-                               obstacle_center[1] - rect_height])
+    for obstacle_xy in obstacles_xy:
+        top_left = np.array([obstacle_xy[0], obstacle_xy[1]])
+        bottom_right = np.array([obstacle_xy[2], obstacle_xy[3]])
         cv2.rectangle(image, to_cv2_point(top_left), to_cv2_point(bottom_right), 
                      color=(0, 0, 255), thickness=-1)
     
     # Draw paths with different colors
     colors = [(100, 100, 255), (255, 255, 0)]  # Blue for test path, Yellow for best path
     
-    for paths, voms, color in zip(paths_list, voms_list, colors):
+    for paths, voms, closest_points, color in zip(paths_list, voms_list, closest_points_list, colors):
         
         # Draw VOMs with influence radius
         for vom in voms:
             if vom is not None:
-                cv2.circle(image, to_cv2_point(vom), radius=10, 
-                        color=(0, 150, 150), thickness=-1)
-                cv2.circle(image, to_cv2_point(vom), radius=50, 
-                        color=(0, 100, 100), thickness=1)
-                
-                # Draw direction indicators
-                cv2.line(image, to_cv2_point(vom), 
-                        to_cv2_point(vom + np.array([50, 0])),
-                        color=(0, 200, 200), thickness=1)
+                cv2.circle(image, to_cv2_point(vom), radius=5, color=(0, 150, 150), thickness=-1)
             
         # Draw path with gradient
         if len(paths) > 1:
@@ -362,6 +318,10 @@ def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_list, closest
                 cv2.line(image, to_cv2_point(paths[i]), 
                         to_cv2_point(paths[i+1]), 
                         color=path_color, thickness=2)
+        for step_points in closest_points:  # For each step's points
+            for point in step_points:       # For each obstacle's closest point
+                cv2.circle(image, to_cv2_point(point), radius=3, 
+                          color=(0, 255, 255), thickness=-1)
     
     # Draw start and goal with labels
     cv2.circle(image, to_cv2_point(start), radius=20, 
@@ -375,115 +335,74 @@ def draw_scene(image, start, goal, obstacles, obstacle_dims, paths_list, closest
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
 # ---------------------- Main Program ----------------------
-def main():
-    """Main program loop with dual path optimization"""
-    # Initialize points and obstacles
-    start = np.array([40, -440])
-    goal = np.array([300, -140])
-    prev_path = []
-    best_path = None
-    best_path_length = float('inf')
-    
+def apf_path(start, goal,obstacles_points,magnitude,best_path, prev_path, best_magnitude, min_path_length):
+
+    mag_diff = 20   # Magnitude difference between paths
+    mag_increment = 10  # How much to change magnitude between iterations
+    image = np.zeros((480, 640, 3), dtype=np.uint8)
     window_name = 'Enhanced APF Path Planning'
     cv2.namedWindow(window_name)
     
-    # Create trackbars for obstacles
-    for i in range(1, 6):
-        cv2.createTrackbar(f'Obstacle {i} X', window_name, 101 + (i-1)*50, 640, lambda x: None)
-        cv2.createTrackbar(f'Obstacle {i} Y', window_name, 325 - (i-1)*15, 480, lambda x: None)
+    # Generate two paths with different magnitudes
+    closest_points = []
+    voms = []
+    path_lengths = []
     
-    # Path planning parameters
-    magnitude = 50  # Starting magnitude
-    mag_diff = 20   # Magnitude difference between paths
-    mag_increment = 10  # How much to change magnitude between iterations
-    best_magnitude = magnitude
-    min_path_length = float('inf')
-    obstacle_dims = np.array([20, 40])
-    
-    print("Starting Enhanced APF Path Planning")
-    print("Controls: ESC - Exit, R - Reset")
-    
-    while True:
-        image = np.zeros((480, 640, 3), dtype=np.uint8)
-        
-        # Get obstacle positions
-        obstacles = []
-        for i in range(1, 6):
-            x = cv2.getTrackbarPos(f'Obstacle {i} X', window_name)
-            y = cv2.getTrackbarPos(f'Obstacle {i} Y', window_name)
-            obstacles.append(np.array([x, -y]))
-        
-        # Generate two paths with different magnitudes
-        paths = []
-        closest_points = []
-        voms = []
-        path_lengths = []
-        
-        # Current best magnitude path
-        path1, cp1, v1, len1,reached1 = generate_enhanced_path(
-            start, goal, obstacles, obstacle_dims, magnitude, prev_path, best_path)
-        # len1 = len(path1)
-        # Test path with different magnitude
-        test_magnitude = magnitude + mag_diff
-        path2, cp2, v2, len2, reached2 = generate_enhanced_path(
-            start, goal, obstacles, obstacle_dims, test_magnitude, prev_path, best_path)
+    # Current best magnitude path
+    path1, cp1, v1, len1,reached1 = generate_enhanced_path(start, goal, obstacles_points, magnitude, prev_path, best_path)
 
-        closest_points = [cp1, cp2]
-        voms = [v1, v2]
-        path_lengths = [len1, len2]
-        
-        # Update magnitude based on path lengths
-        if reached1 and reached2:
-            if path_lengths[0] < path_lengths[1]:
-                magnitude = max(10, magnitude - mag_increment)
-                prev_path = path1 if len1 != float('inf') else prev_path
-                if len1 < min_path_length and len1 != float('inf'):
-                    min_path_length = len1
-                    best_magnitude = magnitude
-                    best_path = path1.copy()
-            else:
-                magnitude = min(200, magnitude + mag_increment)
-                prev_path = path2 if len2 != float('inf') else prev_path
-                if len2 < min_path_length and len2 != float('inf'):
-                    min_path_length = len2
-                    best_magnitude = magnitude + mag_diff
-                    best_path = path2.copy()
+    # Test path with different magnitude
+    test_magnitude = magnitude + mag_diff
+    path2, cp2, v2, len2, reached2 = generate_enhanced_path(start, goal, obstacles_points, test_magnitude, prev_path, best_path)
+
+    closest_points = [cp1, cp2]
+    voms = [v1, v2]
+    path_lengths = [len1, len2]
+    
+    # Update magnitude based on path lengths
+    if reached1 and reached2:
+        if path_lengths[0] < path_lengths[1]:
+            magnitude = max(10, magnitude - mag_increment)
+            prev_path = path1 if len1 != float('inf') else prev_path
+            if len1 < min_path_length and len1 != float('inf'):
+                min_path_length = len1
+                best_magnitude = magnitude
+                best_path = path1.copy()
         else:
-            magnitude = best_magnitude
-        
-        # Visualization - also show best path if it exists
-        paths_to_draw = [path1, path2]
-        if best_path is not None:
-            paths_to_draw.append(best_path)
-            voms.append([])  # Add empty voms for best path visualization
-        
-        draw_scene(image, start, goal, obstacles, obstacle_dims, 
-                  paths_to_draw, closest_points, voms)
-        
-        # Display info
-        info_text = f"Magnitude: {magnitude:.1f} | Best: {best_magnitude:.1f} | Min Length: {min_path_length}"
-        cv2.putText(image, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (255, 255, 255), 1)
-        
-        cv2.imshow(window_name, image)
-        
-        key = cv2.waitKey(1) & 0xFF
-        if key == 27:  # ESC
-            print("\nExiting program")
-            break
-        elif key == ord('r'):  # Reset
-            print("\nResetting path planning")
-            magnitude = 50
-            prev_path = []
-            best_path = None
-            best_path_length = float('inf')
-            min_path_length = float('inf')
-        
-    cv2.destroyAllWindows()
+            magnitude = min(200, magnitude + mag_increment)
+            prev_path = path2 if len2 != float('inf') else prev_path
+            if len2 < min_path_length and len2 != float('inf'):
+                min_path_length = len2
+                best_magnitude = magnitude + mag_diff
+                best_path = path2.copy()
+    else:
+        magnitude = best_magnitude
+    
+    # Visualization - also show best path if it exists
+    paths_to_draw = [path1, path2]
+    if best_path is not None:
+        paths_to_draw.append(best_path)
+        voms.append([])  # Add empty voms for best path visualization
+    
+    draw_scene(image, start, goal, obstacles_points,
+                paths_to_draw, closest_points, voms)
+    
+    # Display info
+    info_text = f"Magnitude: {magnitude:.1f} | Best: {best_magnitude:.1f} | Min Length: {min_path_length}"
+    cv2.putText(image, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    
+    cv2.imshow(window_name, image)
+    
+    # key = cv2.waitKey(1) & 0xFF
+    # if key == 27:  # ESC
+    #     print("\nExiting program")
+    #     break
+    # elif key == ord('r'):  # Reset
+    #     print("\nResetting path planning")
+    #     magnitude = 50
+    #     prev_path = []
+    #     best_path = None
+    #     min_path_length = float('inf')
+    return magnitude,best_path,prev_path,best_magnitude, min_path_length
 
-def some():
-    return None
-
-
-if __name__ == "__main__":
-    main()
+# if __nam1()

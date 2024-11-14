@@ -1,10 +1,6 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-import time
-
-from filter_box_lowpass import find_near_matches_2d
-from detect_quad_v11 import yolo_detection
 
 def initialize_realsense():
     pipeline = rs.pipeline()
@@ -148,7 +144,7 @@ def detect_boxes(image):
     contours, _ = cv2.findContours(mask_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contour_image = image.copy()
     cv2.drawContours(contour_image, contours, -1, (0,255,0), 2)
-    cv2.imshow('Step 5: Contours', contour_image)
+    # cv2.imshow('Step 5: Contours', contour_image)
     
     # Step 6: Filter and draw bounding boxes
     min_area = 1500  # Adjust this value based on the size of your boxes

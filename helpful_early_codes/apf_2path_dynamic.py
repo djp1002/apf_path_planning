@@ -120,7 +120,7 @@ def draw_scene(image, start, goal, obstacles, obstacle_dims, og_paths, cl_points
             # Draw closest points
             for obstacle_closest_points in closest_points:
                 for point in obstacle_closest_points:
-                    cv2.circle(image, to_cv2_point(point), radius=3, color=(0, 255, 255), thickness=-1)
+                    cv2.circle(image, to_cv2_point(point), radius=1, color=(0, 255, 255), thickness=-1)
                     # Draw line from path point to closest point
                     # path_point = path[closest_points.index(point)]
                     # cv2.line(image, to_cv2_point(path_point), to_cv2_point(point), 
