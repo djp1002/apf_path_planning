@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 import cv2
 import numpy as np
-import time
 
 # ---------------------- Utility Functions ----------------------
 def calculate_force(p1, p2, charge):
@@ -392,17 +391,5 @@ def apf_path(start, goal,obstacles_points,magnitude,best_path, prev_path, best_m
     cv2.putText(image, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
     cv2.imshow(window_name, image)
-    
-    # key = cv2.waitKey(1) & 0xFF
-    # if key == 27:  # ESC
-    #     print("\nExiting program")
-    #     break
-    # elif key == ord('r'):  # Reset
-    #     print("\nResetting path planning")
-    #     magnitude = 50
-    #     prev_path = []
-    #     best_path = None
-    #     min_path_length = float('inf')
-    return magnitude,best_path,prev_path,best_magnitude, min_path_length
 
-# if __nam1()
+    return magnitude,best_path,prev_path,best_magnitude, min_path_length

@@ -123,14 +123,14 @@ def detect_boxes(image):
     
     # Step 2: Define range for red color
     lower_red1 = np.array([0, 120, 70])
-    upper_red1 = np.array([40, 255, 255])
-    lower_red2 = np.array([120, 120, 70])
-    upper_red2 = np.array([180, 255, 255])
+    upper_red1 = np.array([10, 255, 255])
+    # lower_red2 = np.array([70, 120, 70])
+    # upper_red2 = np.array([180, 255, 255])
     
     # Step 3: Create mask for red color
     mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-    mask = mask1 + mask2
+    # mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask = mask1
     # cv2.imshow('Step 3: Color Mask', mask)
     
     # Step 4: Noise reduction
@@ -165,11 +165,11 @@ def detect_boxes(image):
             else:
                 solidity = float(area)/cv2.contourArea(cv2.convexHull(approx))
         # Check if the contour has 4 vertices (rectangular)
-        if len(approx) == 4 and solidity>0.6:
+        if 7>len(approx) >2 and solidity>0.6:
             rectangular_contours.append(approx)
             x, y, w, h = cv2.boundingRect(approx)
             # aspect_ratio = float(w)/h
-            # cv2.rectangle(result_image, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.rectangle(result_image, (x, y), (x+w, y+h), (0, 255, 0), 2)
             rectangles.append([x, y, x+w, y+h,0])
 
     cv2.drawContours(result_image, rectangular_contours, -1, (0, 0, 255), 2)
