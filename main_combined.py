@@ -4,9 +4,8 @@ import numpy as np
 from filter_box_lowpass import find_near_matches_2d
 from detect_quad_v11 import yolo_detection, class_colors, class_names
 from depth_detection_refined import initialize_realsense,initialize_filters, process_frames, detect_boxes
-from gait_pattern import adaptive_gait_selection
 from apf_vom_vector_minima_pract import apf_path
-from go1_command import gait_command
+from go1_command import gait_command, get_quadruped_angles, adaptive_gait_selection, init_udp
 
 
 
@@ -31,8 +30,10 @@ def main():
 
     reached = [0,0,0]
     completed = [0,0,0]
-    gait_type = 0
+    terrain_type = 0
     goal_index = 0
+    udp, cmd, state =init_udp()
+    quadruped_angles = get_quadruped_angles(udp, cmd, state)
     try:
         while True:
             obstacle_points = []
@@ -59,19 +60,24 @@ def main():
                         obstacle_points.append([x1, -y1, x2, -y2])
             # obstacle_points = [[100, -100, 200, -200], [150, -350, 250, -450]]             
             cv2.imshow('Step 6: Bounding Boxes', raw_image)
-            print(len(obstacle_points),obstacle_points)
+            # print(len(obstacle_points),obstacle_points)
             color_image, yolo_results, quadruped_xy, sand_xy, stair_xy, stones_xy = yolo_detection(color_image)
             
-            
-
             # cv2.imshow('Final Result with detection', image_bounding_box)
             # cv2.imshow('Raw depth filtered', raw_image)
+            if goal_index < 3:
+                start, goal, terrain_type, reached, completed, goal_index = adaptive_gait_selection(quadruped_xy, sand_xy, stair_xy, stones_xy, reached, completed, goal_index)
 
-            start, goal, gait_type, reached, completed, goal_index = adaptive_gait_selection(quadruped_xy, sand_xy, stair_xy, stones_xy, reached, completed, goal_index)
+                magnitude, best_path,prev_path,best_magnitude, min_path_length = apf_path(start, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length)
+                next_point = best_path[1]
 
-            magnitude, best_path,prev_path,best_magnitude, min_path_length = apf_path(start, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length)
-            next_point = best_path[1]
-            total_left_dist = len(best_path)
+                total_left_dist = len(best_path)
+
+                quadruped_angles, quadruped_velocity = gait_command(udp, cmd, state, start, next_point, total_left_dist, terrain_type)
+            else:
+                print("course, complete")    
+            # print("velocity ", quadruped_velocity, terrain_type, quadruped_angles)
+            # print("quadruped angles", quadruped_angles)
 
             
             # if gait_type == 1:

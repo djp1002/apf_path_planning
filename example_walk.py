@@ -1,10 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys
 import time
 import math
 
-sys.path.append('../lib/python/arm64')
+sys.path.append('../lib/python/arm64')  # for jetson platform -> arm64
+
 import robot_interface as sdk
 
 
@@ -13,7 +14,7 @@ if __name__ == '__main__':
     HIGHLEVEL = 0xee
     LOWLEVEL  = 0xff
 
-    udp = sdk.UDP(HIGHLEVEL, 8080, "192.168.123.161", 8082)
+    udp = sdk.UDP(HIGHLEVEL, 8080, "192.168.1.170", 8082)
 
     cmd = sdk.HighCmd()
     state = sdk.HighState()
@@ -42,13 +43,13 @@ if __name__ == '__main__':
         cmd.yawSpeed = 0.0
         cmd.reserve = 0
 
-        # cmd.mode = 2
-        # cmd.gaitType = 1
-        # # cmd.position = [1, 0]
-        # # cmd.position[0] = 2
-        # cmd.velocity = [-0.2, 0] # -1  ~ +1
-        # cmd.yawSpeed = 0
-        # cmd.bodyHeight = 0.1
+        cmd.mode = 2
+        cmd.gaitType = 1
+        # cmd.position = [1, 0]
+        # cmd.position[0] = 2
+        cmd.velocity = [-0.2, 0] # -1  ~ +1
+        cmd.yawSpeed = 0
+        cmd.bodyHeight = 0.1
 
         if(motiontime > 0 and motiontime < 1000):
             cmd.mode = 1
@@ -95,11 +96,11 @@ if __name__ == '__main__':
         if(motiontime > 13000 and motiontime < 14000):
             cmd.mode = 0
         
-        if(motiontime > 14000 and motiontime < 18000):
+        if(motiontime > 0 and motiontime < 8000):
             cmd.mode = 2
-            cmd.gaitType = 2
-            cmd.velocity = [0.4, 0] # -1  ~ +1
-            cmd.yawSpeed = 2
+            cmd.gaitType = 1
+            cmd.velocity = [0.1, 0] # -1  ~ +1
+            cmd.yawSpeed = 0.0
             cmd.footRaiseHeight = 0.1
             # printf("walk\n")
         
@@ -114,6 +115,6 @@ if __name__ == '__main__':
             cmd.bodyHeight = 0.1
             # printf("walk\n")
             
-
+        # print(motiontime)
         udp.SetSend(cmd)
         udp.Send()

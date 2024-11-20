@@ -265,8 +265,8 @@ def generate_enhanced_path(start, goal, obstacles_xy, magnitude, prev_path, best
         
         # Check if goal reached
         dist_to_goal = calculate_distance(current, goal)
-        if dist_to_goal < 20.0:
-            print(f"Goal reached in {len(path)} steps!")
+        if dist_to_goal <= 20.0:
+            # print(f"Goal reached in {len(path)} steps!")
             reached = True
         
         # Store metrics for next iteration
@@ -357,7 +357,7 @@ def apf_path(start, goal,obstacles_points,magnitude,best_path, prev_path, best_m
     closest_points = [cp1, cp2]
     voms = [v1, v2]
     path_lengths = [len1, len2]
-    
+
     # Update magnitude based on path lengths
     if reached1 and reached2:
         if path_lengths[0] < path_lengths[1]:

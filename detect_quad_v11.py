@@ -24,7 +24,7 @@ def yolo_detection( frame ):
     # frame = cv2.resize(frame, (640, 480)) # 640 * 480
 
     # Perform object detection
-    results = model(source=frame, show=False, conf=0.6, save=False)
+    results = model(source=frame, verbose = False, show=False, conf=0.6, save=False)
     quadruped_xy, sand_xy, stair_xy, stones_xy = [100,200,100,200], [0,0,0,0], [0,0,0,0], [600,200,600,200]
 
     for result in results:

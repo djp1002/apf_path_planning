@@ -17,7 +17,7 @@ def adaptive_gait_selection(quadruped, sand, stair, stones, reached, completed, 
         point2 = np.array([goal_midpoint[0],goal_midpoint + l1/2 + proximity_dist])
     dist1 = calculate_distance(start, point1)
     dist2 = calculate_distance(start, point2)
-    gait_type = 0
+    terrain_type = 0
     
     if completed[i] == 0:
         if reached[i] == 0:
@@ -25,22 +25,17 @@ def adaptive_gait_selection(quadruped, sand, stair, stones, reached, completed, 
                 initial_goal = point1
             else:
                 initial_goal = point2
-            gait_type = 0
+            terrain_type = 3
             goal = initial_goal
             dist_to_goal = calculate_distance(start, goal)
             if dist_to_goal < proximity_dist:
                 reached[i] = 1
         else:
-            gait_type = i
+            terrain_type = i
             goal = point1 if initial_goal == point2 else point2
             dist_to_goal = calculate_distance(start, goal)
             if dist_to_goal < proximity_dist:
                 completed[i] = 1
     else:
         i+=1
-    return start, goal, gait_type, reached, completed, i
-
-
-def stair_mode_velocity():
-
-    return None
+    return start, goal, terrain_type, reached, completed, i
