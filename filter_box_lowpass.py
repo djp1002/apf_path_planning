@@ -12,7 +12,7 @@ def find_near_matches_2d(list1, list2, dim_inc = 10, tolerance=1, k_low=0.5, del
     # Sorted lists are tuple contains bounding box and centroid
     
     sized_list1 = [[x1 - dim_inc, y1 - dim_inc, x2 + dim_inc, y2 + dim_inc, w] for x1, y1, x2, y2, w in list1]
-    sized_list2 = [[x1 - dim_inc, y1 - dim_inc, x2 + dim_inc, y2 + dim_inc, w] for x1, y1, x2, y2, w in list2]
+    sized_list2 = [[x1          , y1          , x2          , y2          , w] for x1, y1, x2, y2, w in list2]
     sorted1 = sorted([(calculate_centroid(box), box) for box in sized_list1], key=lambda p: p[0])
     sorted2 = sorted([(calculate_centroid(box), box) for box in sized_list2], key=lambda p: p[0])
     

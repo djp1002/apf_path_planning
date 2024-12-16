@@ -4,18 +4,20 @@ import numpy as np
 from filter_box_lowpass import find_near_matches_2d
 from detect_quad_v11 import yolo_detection, class_colors, class_names
 from depth_detection_refined import initialize_realsense,initialize_filters, process_frames, detect_boxes
-from apf_vom_vector_minima_pract import apf_path
-from go1_command import gait_command, get_quadruped_angles, adaptive_gait_selection, init_udp, tf_q_g2, tf_g_i2
+from apf_vom_vector_minima_pract import apf_path, calculate_distance
+from go1_command import gait_command, adaptive_gait_selection, init_udp, tf_q_g2, tf_g_i2, stair_mode_gait, stair_command_vel, stair_inv_command_vel
 from tf.transformations import euler_from_quaternion
 import rospy
 from sensor_msgs.msg import Imu
 from mavros_msgs.msg import RCIn
 
-global uav_yaw, rc_ch
+global uav_yaw, initial_uav_yaw, uav_yaw_set, rc_ch
 uav_yaw = 0.0
 rc_ch = 0
+initial_uav_yaw = 0.0
+uav_yaw_set = 0
 def main():
-    global uav_yaw, rc_ch
+    global uav_yaw, rc_ch, initial_uav_yaw
     pipeline, config = initialize_realsense()
     align, colorizer, decimation, spatial, temporal, hole_filling, depth_to_disparity, disparity_to_depth = initialize_filters()    
 
@@ -26,6 +28,7 @@ def main():
     # writer_depth_box = cv2.VideoWriter('output_videos/depth_box_1.avi', fourcc, 30, (640, 480))
     # writer_depth_raw = cv2.VideoWriter('output_videos/depth_raw_1.avi', fourcc, 30, (640, 480))
     # writer_rgb = cv2.VideoWriter('output_videos/rgb_22_04_45.avi', fourcc, 30, (640, 480))
+    apf_image = np.zeros((480, 640, 3), dtype=np.uint8)
     rect_filtered =[]
     pipeline.start(config)
     start = np.array([40, -440])
@@ -35,16 +38,31 @@ def main():
     # Path planning parameters
     magnitude = 50  # Starting magnitude
 
+    dist_tolerance_obstacles = 30
+
+
     best_magnitude = magnitude
     min_path_length = float('inf')
 
     reached = [0,0,0]
     completed = [0,0,0]
+    # reached = [1,1,0]
+    # completed = [1,1,0]
+    mid_reached = 0
+    oriented = 0
     terrain_type = 0
     goal_index = 0
     udp, cmd, state =init_udp()
-    quadruped_yaw = get_quadruped_angles(udp, cmd, state)
-    quadruped_xy, sand_xy, stair_xy, stones_xy = [100,-200,110,-210], [600,-200,600,-200], [0,0,0,0], [0,0,0,0]
+    # quadruped_yaw_initial = get_quadruped_angles(udp, cmd, state)
+    quadruped_yaw_initial = 0
+    quadruped_yaw = 0
+    quadruped_xy, sand_xy, stair_xy, stones_xy = [100,-200,110,-210], [400,-200,420,-220],  [600,-200,620,-220], [200,-30,240,-90]
+    initial_goal =[]
+    next_goal = []
+    kp_v = 0.1
+    kp_w = 0.01
+
+
     try:
         while True:
             obstacle_points = []
@@ -57,17 +75,22 @@ def main():
             if colorized_depth_filtered is None:
                 continue
             
-            color_image, yolo_results, quadruped_xy, sand_xy, stair_xy, stones_xy = yolo_detection(color_image, quadruped_xy, sand_xy, stair_xy, stones_xy)
+            color_image, yolo_results, quadruped_xy, sand_xy, stair_xy, stones_xy = yolo_detection(
+                                            color_image, quadruped_xy, sand_xy, stair_xy, stones_xy)
+            
             
             # important transformations  -------------------------------------------------------------------------->>>
             quadruped_xy_g = tf_g_i2(quadruped_xy, uav_yaw)
-            quadruped_center_g = [(quadruped_xy_g[0]+quadruped_xy_g[2])/2, (quadruped_xy_g[1]+quadruped_xy_g[3])/2]
+            quadruped_center_g = [(quadruped_xy_g[0][0] + quadruped_xy_g[1][0] + quadruped_xy_g[2][0] + quadruped_xy_g[3][0] )/4, 
+                                  (quadruped_xy_g[0][1] + quadruped_xy_g[1][1] + quadruped_xy_g[2][1] + quadruped_xy_g[3][1] )/4]
 
             # transformations to quadruped frame ------------------------------------------------------------------>>>
             quadruped_xy_q = tf_q_g2( tf_g_i2(quadruped_xy, uav_yaw), quadruped_center_g, quadruped_yaw)
             sand_xy_q = tf_q_g2( tf_g_i2(sand_xy, uav_yaw), quadruped_center_g, quadruped_yaw)
             stair_xy_q = tf_q_g2( tf_g_i2(stair_xy, uav_yaw), quadruped_center_g, quadruped_yaw)
             stones_xy_q = tf_q_g2( tf_g_i2(stones_xy, uav_yaw), quadruped_center_g, quadruped_yaw)
+
+            # quadruped_xy_q2 = np.array([np.min(quadruped_xy_q[:,0]),np.max(quadruped_xy_q[:,1]),np.max(quadruped_xy_q[:,0]),np.min(quadruped_xy_q[:,1])])
 
             # print("tranformation_ check", quadruped_xy, uav_yaw)
             # print(quadruped_xy,quadruped_center_i)
@@ -83,34 +106,74 @@ def main():
                     if weight>0.4:
                         cv2.rectangle(raw_image, (x1, y1), (x2, y2), (255, 255, 255), 4)
                         obstacle_i = [x1, -y1, x2, -y2]
-                        obstacle_q = tf_q_g2( tf_g_i2(obstacle_i, uav_yaw), quadruped_center_g, quadruped_yaw)
-                        obstacle_points.append(obstacle_q)
+                        obstacle_center_i = [(obstacle_i[0] + obstacle_i[2])/2,(obstacle_i[1] + obstacle_i[3])/2]
+                        quadruped_center_i = [(quadruped_xy[0] + quadruped_xy[2])/2,(quadruped_xy[1] + quadruped_xy[3])/2]
+                        stair_center_i = [(stair_xy[0] + stair_xy[2])/2,(stair_xy[1] + stair_xy[3])/2]
+                        dist_stair = calculate_distance(stair_center_i, obstacle_center_i)
+                        dist_quadruped = calculate_distance(quadruped_center_i, obstacle_center_i)
+                        if dist_quadruped > dist_tolerance_obstacles and dist_stair > dist_tolerance_obstacles:
+                            obstacle_q = tf_q_g2( tf_g_i2(obstacle_i, uav_yaw), quadruped_center_g, quadruped_yaw)
+                            obstacle_points.append(obstacle_q)
             # obstacle_points = [[100, -100, 200, -200], [150, -350, 250, -450]]             
-            cv2.imshow('Step 6: Bounding Boxes', raw_image)
+            # cv2.imshow('Step 6: Bounding Boxes', raw_image)
             # print(obstacle_points)
             
             
             # cv2.imshow('Final Result with detection', image_bounding_box)
             # cv2.imshow('Raw depth filtered', raw_image)
+            # print(rc_ch)
+            if rc_ch > 1600:
+                # print(rc_ch)
+                if goal_index < 3:
+                    start, goal, terrain_type, reached, completed, goal_index, initial_goal, next_goal, goal_points = adaptive_gait_selection(
+                        quadruped_xy_q, sand_xy_q, stair_xy_q, stones_xy_q, reached, completed, goal_index, initial_goal, next_goal, proximity_dist=20)
+                    
+                    apf_image, magnitude, best_path, prev_path, best_magnitude, min_path_length = apf_path(
+                        quadruped_xy_q, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length, goal_points, next_goal, proximity_dist=10)
+                    next_point = prev_path[1] if prev_path else start
+                    # print(start, goal, next_point)
+                    total_left_dist = len(prev_path)
+                    
+                    vel_clip = [0.2,2]
+                    # if rc_ch<1600:
+                    #     vel_clip = [0 , 0]
 
-            if goal_index < 3:
-                start, goal, terrain_type, reached, completed, goal_index = adaptive_gait_selection(quadruped_xy_q, sand_xy_q, stair_xy_q, stones_xy_q, reached, completed, goal_index)
-                magnitude, best_path, prev_path, best_magnitude, min_path_length = apf_path(start, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length)
-                next_point = prev_path[1]
-                # print(start, goal, next_point)
-                total_left_dist = len(best_path)
-                
-                vel_clip = [0.2,0.2]
-                if rc_ch<1600:
-                    vel_clip = [0 , 0]
+                    quadruped_yaw, quadruped_velocity, quadruped_yaw_initial = gait_command(udp, cmd, state, quadruped_yaw_initial, start, next_point, total_left_dist, terrain_type, Kp=[kp_v,kp_w], vel_clip = vel_clip)
+                    print("quadruped---------------------------------------------------------->", "terrain type",terrain_type, quadruped_velocity)
+                    # print("goals", initial_goal, next_goal, goal_points, completed, reached)
+                    # print("drone yaw angle", quadruped_velocity, quadruped_yaw, quadruped_yaw_initial)
+                # elif goal_index == 2:
+                #     start, goal, terrain_type, reached, completed, initial_goal, next_goal, goal_points, mid_reached, oriented, vel = stair_mode_gait(quadruped_xy_q, stair_xy_q, reached, completed, initial_goal, next_goal, mid_reached, oriented, proximity_dist = 20, goal_offset_dist = 30)
+                #     print("quadruped---------------------------------------------------------->", "terrain type",terrain_type, mid_reached, oriented)
 
-                quadruped_yaw, quadruped_velocity = gait_command(udp, cmd, state, start, next_point, total_left_dist, terrain_type, vel_clip)
-                print("quadruped yaw and velocity", quadruped_yaw, quadruped_velocity, terrain_type, uav_yaw)
-                # print(start, goal)
-                # print("drone yaw angle", uav_yaw)
-            else:
-                print("course, complete")
-                break
+                #     if mid_reached == 0:
+                #         apf_image, magnitude, best_path, prev_path, best_magnitude, min_path_length = apf_path(
+                #         quadruped_xy_q, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length, goal_points, next_goal, proximity_dist=10)
+                #         next_point = prev_path[1] if prev_path else start
+                #         # print(start, goal, next_point)
+                #         total_left_dist = len(prev_path)
+                #         vel_clip = [0.4,1.0]
+                #         quadruped_yaw, quadruped_velocity, quadruped_yaw_initial = gait_command(udp, cmd, state, quadruped_yaw_initial, start, next_point, total_left_dist, terrain_type, Kp=[kp_v,kp_w], vel_clip = vel_clip)
+
+                #     elif mid_reached == 1 and oriented == 0:
+                #         quadruped_yaw, quadruped_yaw_initial = stair_command_vel(udp, cmd, state, quadruped_yaw_initial, vel)
+                #         apf_image, magnitude, best_path, prev_path, best_magnitude, min_path_length = apf_path(
+                #         quadruped_xy_q, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length, goal_points, next_goal, proximity_dist=10)
+                #         next_point = prev_path[1] if prev_path else start
+                #     elif mid_reached ==1 and oriented == 1:
+                #         apf_image, magnitude, best_path, prev_path, best_magnitude, min_path_length = apf_path(
+                #         quadruped_xy_q, goal,obstacle_points,magnitude,best_path,prev_path,best_magnitude, min_path_length, goal_points, next_goal, proximity_dist=10)
+                #         next_point = prev_path[1] if prev_path else start
+                #         # print(start, goal, next_point)
+                #         total_left_dist = len(prev_path)
+                #         vel_clip = [0.4,1.0]
+                #         quadruped_yaw, quadruped_velocity, quadruped_yaw_initial = stair_inv_command_vel(udp, cmd, state, quadruped_yaw_initial, start, next_point, total_left_dist, terrain_type, Kp=[kp_v,kp_w], vel_clip = vel_clip)
+
+
+
+                else:
+                    print("course, complete")
+                    break
             # print("velocity ", quadruped_velocity, terrain_type, quadruped_angles)
             # print("quadruped angles", quadruped_angles)
 
@@ -123,7 +186,9 @@ def main():
             start_time = end_time
 
             cv2.putText(color_image, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.imshow('RealSense RGB', color_image)
+            rgbd_image = cv2.hconcat([raw_image, color_image])
+            final_image = cv2.hconcat([rgbd_image, apf_image]) 
+            cv2.imshow('RealSense RGB', final_image)
 
             # writer_depth_box.write(image_bounding_box)
             # writer_depth_raw.write(raw_image)
@@ -139,22 +204,26 @@ def main():
         cv2.destroyAllWindows()
 
 def imu_callback(data):
-    global uav_yaw
+    global uav_yaw, uav_yaw_set, initial_uav_yaw
     quat = [data.orientation.w, data.orientation.x, data.orientation.y, data.orientation.z]
     angles = euler_from_quaternion(quat)
-    uav_yaw = -angles[0] - (150 * np.pi / 180)
+    uav_yaw = -angles[0] - initial_uav_yaw
     if uav_yaw > np.pi:
         uav_yaw = - 2*np.pi + uav_yaw
 
     elif uav_yaw < -np.pi:
         uav_yaw = 2*np.pi + uav_yaw
 
+    if uav_yaw_set == 0:
+        initial_uav_yaw = uav_yaw
+        uav_yaw_set = 1
+
     # print(an,uav_yaw)
 
 def rc_callback(data):
     global rc_ch
     ch = data.channels
-    rc_ch = ch[5]
+    rc_ch = ch[6]
 
 if __name__ == "__main__":
     main()

@@ -34,19 +34,33 @@ def yolo_detection( frame, quadruped_xy, sand_xy, stair_xy, stones_xy ):
                         conf = box.conf[0].item()
                         cls = int(box.cls[0].item())
                         class_name = class_names[cls]
+                        color = class_colors[class_name]
 
                         if(class_name == "quadruped"):
                             quadruped_xy = [x1, -y1, x2, -y2]
+                            final = cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness=2)
                         elif(class_name =="sand"):
                             sand_xy = [x1, -y1, x2, -y2]
+                            final = cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness=2)
                         elif(class_name =="stairs"):
+                            stair_xy_temp = stair_xy
                             stair_xy = [x1, -y1, x2, -y2]
+                            temp_area = abs((stair_xy_temp[0]-stair_xy_temp[2])*(stair_xy_temp[1]-stair_xy_temp[3]))
+                            main_area = abs((stair_xy[0]-stair_xy[2])*(stair_xy[1]-stair_xy[3]))
+                            area_diff = abs(main_area - temp_area)
+                            if main_area>=temp_area or area_diff < 5000:    
+                                stair_xy = stair_xy
+                            else:
+                                # stair_xy = stair_xy_temp
+                                stair_xy = stair_xy
+                        
+                            final = cv2.rectangle(frame, (int(stair_xy[0]), int(-stair_xy[1])), (int(stair_xy[2]), int(-stair_xy[3])), color, thickness=2)
+                            
                         elif(class_name =="stones"):
                             stones_xy = [x1, -y1, x2, -y2]
-                        color = class_colors[class_name]
+                            final = cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness=2)
                         
                         # Draw bounding box and display class
-                        final = cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness=2)
                         text = f"{class_name}: {confidence_format.format(conf)}"
                         cv2.putText(final, text, (int(x1) + 10, int(y1) + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     return frame, results, quadruped_xy, sand_xy, stair_xy, stones_xy
