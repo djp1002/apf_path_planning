@@ -296,7 +296,7 @@ def calculate_next_position_with_voms(current_pos_xy,force_metrics,voms, vom_cha
     f_total = force_metrics['f_total']
     # current_pos = [(current_pos_xy[0]+current_pos_xy[2])/2,(current_pos_xy[1]+current_pos_xy[3])/2]
     current_pos = center_from_corners(current_pos_xy)
-    
+    voms = []
     # Add VOM forces
     if voms is not None:
         for vom, charge in zip(voms, vom_charges):
@@ -324,7 +324,7 @@ def generate_enhanced_path(start_xy, goal, obstacles_xy, magnitude, prev_path,  
 
     # State tracking
     prev_metrics = None
-    max_iterations = 30
+    max_iterations = 70
     iteration = 0
     dist_to_goal = float('inf')
     prev_vom_pos = None
@@ -343,19 +343,19 @@ def generate_enhanced_path(start_xy, goal, obstacles_xy, magnitude, prev_path,  
         approaching_minima, confidence, steps_to_minima = detect_local_minima_region(force_metrics,prev_metrics)
         
         # VOM management - now more proactive and using best_path
-        if approaching_minima:
-            # print(f"Potential local minimum detected! Confidence: {confidence:.2f}")
+        # if approaching_minima:
+        #     # print(f"Potential local minimum detected! Confidence: {confidence:.2f}")
             
-            # Use both initial direction and best path for better VOM placement
-            new_vom_pos, new_vom_charge = calculate_vom_placement(current_xy, force_metrics, prev_path, best_path, prev_vom_pos,steps_to_minima)
-            if prev_vom_pos is None :
-                virtual_obstacles.append(new_vom_pos)
-                vom_charges.append(new_vom_charge)
-            else:
-                dist_diff = np.linalg.norm(prev_vom_pos-new_vom_pos)
-                if dist_diff > 100:
-                    virtual_obstacles.append(new_vom_pos)
-                    vom_charges.append(new_vom_charge)
+        #     # Use both initial direction and best path for better VOM placement
+        #     new_vom_pos, new_vom_charge = calculate_vom_placement(current_xy, force_metrics, prev_path, best_path, prev_vom_pos,steps_to_minima)
+        #     if prev_vom_pos is None :
+        #         virtual_obstacles.append(new_vom_pos)
+        #         vom_charges.append(new_vom_charge)
+        #     else:
+        #         dist_diff = np.linalg.norm(prev_vom_pos-new_vom_pos)
+        #         if dist_diff > 100:
+        #             virtual_obstacles.append(new_vom_pos)
+        #             vom_charges.append(new_vom_charge)
                     
         next_pos = calculate_next_position_with_voms(current_xy, force_metrics, virtual_obstacles, vom_charges)
         # print("current and next position",current,next_pos,"charge",vom_charges)

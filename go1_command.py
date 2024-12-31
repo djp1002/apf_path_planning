@@ -5,7 +5,7 @@ import numpy as np
 from apf_vom_vector_minima_pract import calculate_distance
 
 sys.path.append('../lib/python/arm64')
-import robot_interface as sdk
+import robot_interface as sdk # type: ignore
 
 def init_udp():
     HIGHLEVEL = 0xee
@@ -114,7 +114,7 @@ def gait_command(udp, cmd, state, initial_yaw, current, next_point, dist_to_goal
     udp.SetSend(cmd)
     udp.Send()
 
-    return quadruped_yaw, [vx,vy,w], initial_yaw
+    return quadruped_yaw, [vx,vy,w], initial_yaw, quadruped_angles
 
 def stair_inv_command_vel(udp, cmd, state, initial_yaw, current, next_point, dist_to_goal, Kp, clip):
     vx = - Kp[0] * (dist_to_goal)

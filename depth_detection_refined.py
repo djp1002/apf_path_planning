@@ -75,6 +75,7 @@ def process_frames(pipeline, align, colorizer, decimation, spatial, temporal, ho
     # max_depth = (65535 + 3*max_depth)/4
     # cv2.imshow('depth_norm_np', depth_norm_np)
     depth_norm_np = depth_norm_np/65535
+    average_depth = np.percentile(depth_norm_np, 95)
     # cv2.imshow('depth_norm_np', depth_norm_np)
     # depth_norm_np = 1 - depth_norm_np
     depth_norm_np = (depth_norm_np)**0.5
@@ -114,7 +115,7 @@ def process_frames(pipeline, align, colorizer, decimation, spatial, temporal, ho
     colorized_depth_np = cv2.applyColorMap(depth_norm_np.astype(np.uint8), cv2.COLORMAP_JET)
     color_image = np.asanyarray(color_frame.get_data())
 
-    return colorized_depth_np, color_image
+    return colorized_depth_np, color_image, average_depth
 
 def detect_boxes(image):
     # Step 1: Convert to HSV color space
