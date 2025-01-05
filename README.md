@@ -1,5 +1,5 @@
-```markdown
-# Dyutkriti: Mobile Probe Potential Field Framework for UAV-Quadruped Navigation
+
+# MPPF: Mobile Probe Potential Field Framework for UAV-Quadruped Navigation
 ![System Overview](assets/system_overview.png)
 This repository contains the implementation of a multi-agent robotic framework that enables synergistic collaboration between a UAV and quadruped robot for autonomous industrial inspection tasks. The system features a novel Mobile Probe Potential Field (MPPF) algorithm for navigation and a comprehensive perception pipeline.
 
@@ -36,28 +36,19 @@ This repository contains the implementation of a multi-agent robotic framework t
 - Python 3.8+
 - CUDA 11.4+ (for YOLOv11)
 - OpenCV 4.5+
-
+```
 ## Directory Structure
 
-```
+
 ├── perception/
-
 │   ├── depth_detection_refined.py      # Depth enhancement and obstacle detection
-
 │   └── detect_quad_v11.py             # YOLOv11-based detection
-
 ├── planning/
-
 │   ├── apf_vom_vector_minima_pract.py # MPPF implementation
-
 │   └── filter_box_lowpass.py          # Obstacle tracking
-
 ├── control/
-
 │   ├── go1_command.py                 # Quadruped control interface
-
 │   └── main_combined.py               # Main system integration
-
 └── utils/
     └── coordinate_transforms.py        # Frame transformation utilities
 ```
@@ -101,8 +92,6 @@ python planning/apf_vom_vector_minima_pract.py
 python perception/depth_detection_refined.py
 ```
 
-```
-
 This README provides a comprehensive overview of the project, installation instructions, usage guidelines, and proper attribution. You may want to customize the following elements:
 
 1. Update the repository URL
@@ -111,5 +100,3 @@ This README provides a comprehensive overview of the project, installation instr
 4. Add troubleshooting guides if needed
 5. Update the paper link once published
 6. Modify the license type if necessary
-
-Would you like me to make any adjustments to this draft?
