@@ -57,8 +57,8 @@ This repository contains the implementation of a multi-agent robotic framework t
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/[username]/dyutkriti-mppf.git
-cd dyutkriti-mppf
+git clone https://github.com/djp1002/apf_path_planning.git
+cd apf_path_planning
 ```
 
 2. Install dependencies:
@@ -79,7 +79,7 @@ catkin_make
 
 1. Launch the main system:
 ```bash
-roslaunch dyutkriti_mppf main.launch
+roslaunch apf_path_planning main.launch
 ```
 
 2. For standalone testing of MPPF:
